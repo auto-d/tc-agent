@@ -261,25 +261,6 @@ class Agent:
     def query(self, user_query: str, user_role: str = "engineer") -> Dict[str, Any]:
         """Answer a question using LLM + tools.
 
-        TODO: 
-
-        3. Parse LLM response to identify tool calls
-           - Check if response mentions any tool names
-           - Extract parameters from response
-
-        4. Execute tools with extracted parameters
-           - tool.execute() with parameters
-           - Collect results
-
-        5. Synthesize final answer
-           - Pass tool results back to LLM
-           - Get final answer
-
-        6. Track tokens and cost
-           - Count tokens in request/response
-           - Calculate cost: (tokens / 1_000_000) * rate
-           - Update totals
-
         Args:
             user_query: The question to answer
             user_role: User's role (for access control in future weeks)
