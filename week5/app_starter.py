@@ -345,6 +345,7 @@ class Agent:
                                 name=tool.name, 
                                 response={"result": result})                            
                             content.append(types.Content(role="user", parts=[function_result]))
+                            break 
 
                 # Armed with responses to the function calls, request another completion (without tool 
                 # calls equipped)
@@ -385,11 +386,16 @@ class Agent:
         """Calculate cost based on tokens.
 
         Gemini 2.5 Pro pricing:
-        - Input: $0.075 per 1M tokens
-        - Output: $0.3 per 1M tokens
+        - Input: $1.25 per 1M tokens
+        - Output: $10.0 per 1M tokens
+
+        On the free tier, we prefer flash, thought don't actually get billed and instead 
+        chip away at our quota
+        - Input: $0.30
+        - Output = $2.5
         """
-        input_cost = (input_tokens / 1_000_000) * 0.075
-        output_cost = (output_tokens / 1_000_000) * 0.3
+        input_cost = (input_tokens / 1_000_000) * 0.3
+        output_cost = (output_tokens / 1_000_000) * 2.5
         return input_cost + output_cost
 
     def get_metrics(self) -> Dict[str, Any]:
