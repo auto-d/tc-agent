@@ -13,8 +13,10 @@ import json
 import sqlite3
 from typing import Dict, Any
 import google.genai as genai
+from google.genai import types
 import logging
 import os
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,12 +33,16 @@ class Tool:
     def __init__(self, name: str, description: str):
         self.name = name
         self.description = description
+        self.schema = None
 
     def execute(self, **kwargs) -> str:
         """Execute the tool.
         """
         raise NotImplementedError
-
+    
+    def get_tool_schema(self) -> str: 
+        """Generalize the tool schema definition"""
+        return json.dumps(self.schema) if self.schema is not None else ""
 
 # TASK 2: Implement EmployeeLookupTool
 
@@ -47,7 +53,25 @@ class EmployeeLookupTool(Tool):
     def __init__(self, db_path: str):
         super().__init__("employee_lookup", "Find employee information by name or ID")
         self.db_path = db_path
-
+        self.schema = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "employee_name": {
+                        "type": "string",
+                        "description": "The exact or approximate employee name. This cannot be used with any other query argument."
+                    },
+                    "employee_id": {
+                        "type": "integer",
+                        "description": "The employee ID. This cannot be used with any other query argument"
+                    }
+                },
+                "required": []
+            }
+        }        
+    
     def execute(self, employee_name: str = None, employee_id: str = None) -> str:
         """Look up employee by name or ID.
 
@@ -90,6 +114,25 @@ class PolicySearchTool(Tool):
         super().__init__("policy_search", "Search policy documents by keyword or topic")
         with open("data/documents.json") as f:
             self.documents = (json.load(f))
+        
+        self.schema = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A string to search for inside the policy library."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "The maximum number of documents to return (default is 5)."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
 
     def execute(self, query: str, limit: int = 5) -> str:
         """Search policies by keyword.
@@ -133,15 +176,24 @@ class ExpenseQueryTool(Tool):
         
         with open("data/policies.json") as f:
             self.policies = (json.load(f))
-        
+
+        self.schema = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "description": "A specific employee role: ['ic1_ic2' | 'ic3' | 'manager' | 'director' | 'vp']."
+                    }
+                },
+                "required": ["role"]
+            }
+        }
 
     def execute(self, role: str) -> str:
         """Query expense approval limit for a given role.
-
-        TODO: Implement expense lookup:
-        1. Look up role in self.policies["expense"]["approval_limits"]
-        2. Return: "Approval limit for {role}: ${amount}"
-        3. If role not found, return "Role not found: {role}"
 
         Args:
             role: Employee role (ic1_ic2, ic3, manager, director, vp)
@@ -188,34 +240,28 @@ class Agent:
             "expense_query": ExpenseQueryTool(),
         }
 
-        self.token_count = 0
-        self.total_cost = 0.0
-        self.queries_run = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.queries = 0
 
     def _build_system_prompt(self, user_role: str) -> str:
         """Build system prompt describing available tools.
 
-        TODO: Create a prompt that:
-        1. Describes the agent's purpose
-        2. Lists all available tools with descriptions
-        3. Explains how to use them
-        4. Sets the user's role context
-
         Returns:
             System prompt string
         """
-        # TODO: implement
-        return "TODO: implement system prompt"
+        
+        prompt = f""" 
+        You are a helpful Tech Corp assistant equipped with tool calls that can be used to retrieve\
+        information about company employees and policies. You are working with a user whose role is\
+        {user_role}, and should tailor your responses according to that role. 
+        """
+        return prompt
 
     def query(self, user_query: str, user_role: str = "engineer") -> Dict[str, Any]:
         """Answer a question using LLM + tools.
 
-        TODO: Implement the reasoning loop:
-
-        1. Call _build_system_prompt(user_role) to build the system prompt
-
-        2. Call Gemini LLM with system prompt + user question
-           - self.client.models.generate_content(model="gemini-2.5-pro", ...)
+        TODO: 
 
         3. Parse LLM response to identify tool calls
            - Check if response mentions any tool names
@@ -247,36 +293,93 @@ class Agent:
         """
         logger.info(f"Processing query: {user_query}")
 
-        # TODO: implement agent query logic
-        results = self.tools["employee_lookup"].execute(employee_id="1")
-        print(results)
-        results = self.tools["employee_lookup"].execute(employee_name="Sophia Moore")
-        print(results)
+        # Build up the Gemini config object which carries necessary tool call and prompt context
+        system_prompt = self._build_system_prompt(user_role)
 
-        results = self.tools["policy_search"].execute(query="financial")
-        print(results)
+        schemas = []
+        for tool in self.tools.values(): 
+            schemas.append(tool.schema) 
 
-        results = self.tools["expense_query"].execute(role="ic3")
-        print(results)
+        tools = types.Tool(function_declarations=schemas)
+        config = types.GenerateContentConfig(
+            tools=[tools], 
+            system_instruction=system_prompt)
+        
+        # Build our message content in the Gemini schema 
+        content = [
+            types.Content(
+                role="user", 
+                parts=[types.Part.from_text(text=user_query)]
+            )
+        ]
+        
+        # Request completion
+        response = self.client.models.generate_content(
+            model="gemini-2.5-flash", 
+            contents=content, 
+            config=config)
+        input_tokens, output_tokens = self._update_usage(response)
 
-        # Check for a function call (source Google Gemini API documentation)
-        # if response.candidates[0].content.parts[0].function_call:
-        #     function_call = response.candidates[0].content.parts[0].function_call
-        #     print(f"Function to call: {function_call.name}")
-        #     print(f"ID: {function_call.id}")
-        #     print(f"Arguments: {function_call.args}")
-        #     #  In a real app, you would call your function here:
-        #     #  result = schedule_meeting(**function_call.args)
-        # else:
-        #     print("No function call found in the response.")
-        #     print(response.text)
+        # Process one or more tool calls if the model invoked 
+        try: 
+            if response.function_calls: 
+
+                # TODO: proceduralize
+                print(f"Found tool calls ({len(response.function_calls)})..")
+                for call in response.function_calls: 
+                    
+                    print(f"Agent called: {call.name}")
+                    for tool in self.tools.values(): 
+                        if tool.name == call.name:                                                         
+                            print(f"Mapped to internal tool {tool.name} ({tool.description})")
+                            
+                            print(f"Calling with arguments: {call.args}")
+                            result = tool.execute(**call.args)
+                            
+                            # Stick gemini's response into our aggregate response so it has context for the 
+                            # following results
+                            content.append(response.candidates[0].content)
+
+                            # ... and add our results
+                            function_result = types.Part.from_function_response(
+                                name=tool.name, 
+                                response={"result": result})                            
+                            content.append(types.Content(role="user", parts=[function_result]))
+
+                # Armed with responses to the function calls, request another completion (without tool 
+                # calls equipped)
+                response = self.client.models.generate_content(
+                    model="gemini-2.5-flash", 
+                    contents=content, 
+                    config=types.GenerateContentConfig(system_instruction=system_prompt))                            
+                tool_input_tokens, tool_output_tokens = self._update_usage(response)
+                input_tokens += tool_input_tokens
+                output_tokens += tool_output_tokens
+
+        except Exception as e: 
+            print("Unexpected error processing tool call!")
 
         return {
-            "answer": "TODO: implement agent query logic",
-            "tokens_used": 0,
-            "cost": 0.0,
+            "answer": response.text,
+            "tokens_used": input_tokens + output_tokens,
+            "cost": self._estimate_query_cost(input_tokens, output_tokens),
             "role": user_role,
         }
+
+    def _update_usage(self, response): 
+        """Parse a response message to extract utilization and record, returning counters"""
+        input = 0 
+        output = 0 
+
+        if response: 
+            input = response.usage_metadata.prompt_token_count 
+            output = response.usage_metadata.thoughts_token_count + response.usage_metadata.candidates_token_count
+
+        self.input_tokens += input 
+        self.output_tokens += output 
+        self.queries += 1
+
+        return input, output
 
     def _estimate_query_cost(self, input_tokens: int, output_tokens: int) -> float:
         """Calculate cost based on tokens.
@@ -298,12 +401,13 @@ class Agent:
         - total_cost: cumulative cost in dollars
         - avg_cost_per_query: average cost per query
         """
-        # TODO: implement
+
+        cost = self._estimate_query_cost(self.input_tokens, self.output_tokens)
         return {
-            "total_queries": 0,
-            "total_tokens": 0,
-            "total_cost": 0.0,
-            "avg_cost_per_query": 0.0,
+            "total_queries": self.queries,
+            "total_tokens": self.input_tokens + self.output_tokens,
+            "total_cost": cost,
+            "avg_cost_per_query": cost/self.queries if self.queries > 0 else 0,
         }
 
 
@@ -318,8 +422,26 @@ if __name__ == "__main__":
         agent = Agent("data/techcorp.db")
         print("Agent initialized successfully")
 
+        # Test tool calls 
+        print("\nTesting tool calls...")
+        print("\nTesting employee lookup by ID")
+        results = agent.tools["employee_lookup"].execute(employee_id="1")
+        print(results)
+
+        print("\nTesting employee lookup by name")
+        results = agent.tools["employee_lookup"].execute(employee_name="Sophia Moore")
+        print(results)
+
+        print("\nTesting policy search")
+        results = agent.tools["policy_search"].execute(query="financial")
+        print(results)
+
+        print("\nTesting expense query")
+        results = agent.tools["expense_query"].execute(role="ic3")
+        print(results)
+        
         # Test a query
-        print("\nTesting query: 'What is the travel policy?'")
+        print("\nTesting agent query: 'What is the travel policy?'")
         result = agent.query("What is the travel policy?")
         print(f"Answer: {result['answer']}")
         print(f"Tokens: {result['tokens_used']}")
