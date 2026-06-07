@@ -123,7 +123,7 @@ class PolicySearchTool(Tool):
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "A string to search for inside the policy library."
+                        "description": "A string to search for inside the policy library and meeting minutes. For example 'travel', 'layoffs', 'budget'."
                     },
                     "limit": {
                         "type": "integer",
@@ -305,16 +305,15 @@ class Agent:
         try: 
             if response.function_calls: 
 
-                # TODO: proceduralize
-                print(f"Found tool calls ({len(response.function_calls)})..")
+                logger.info(f"Found tool calls ({len(response.function_calls)})..")
                 for call in response.function_calls: 
                     
-                    print(f"Agent called: {call.name}")
+                    logger.info(f"Agent called: {call.name}")
                     for tool in self.tools.values(): 
                         if tool.name == call.name:                                                         
-                            print(f"Mapped to internal tool {tool.name} ({tool.description})")
+                            logger.info(f"Mapped to internal tool {tool.name} ({tool.description})")
                             
-                            print(f"Calling with arguments: {call.args}")
+                            logger.info(f"Calling with arguments: {call.args}")
                             result = tool.execute(**call.args)
                             
                             # Stick gemini's response into our aggregate response so it has context for the 
@@ -339,7 +338,7 @@ class Agent:
                 output_tokens += tool_output_tokens
 
         except Exception as e: 
-            print("Unexpected error processing tool call!")
+            logger.error(f"Unexpected error processing tool call! ({type(e)})")
 
         return {
             "answer": response.text,
@@ -407,38 +406,25 @@ if __name__ == "__main__":
     try:
         # Initialize agent
         agent = Agent("data/techcorp.db")
-        print("Agent initialized successfully")
+        logger.info(f"Agent initialized successfully")
 
-        # Test tool calls 
-        print("\nTesting tool calls...")
-        print("\nTesting employee lookup by ID")
-        results = agent.tools["employee_lookup"].execute(employee_id="1")
-        print(results)
-
-        print("\nTesting employee lookup by name")
-        results = agent.tools["employee_lookup"].execute(employee_name="Sophia Moore")
-        print(results)
-
-        print("\nTesting policy search")
-        results = agent.tools["policy_search"].execute(query="financial")
-        print(results)
-
-        print("\nTesting expense query")
-        results = agent.tools["expense_query"].execute(role="ic3")
-        print(results)
-        
         # Test a query
-        print("\nTesting agent query: 'What is the travel policy?'")
-        result = agent.query("What is the travel policy?")
-        print(f"Answer: {result['answer']}")
-        print(f"Tokens: {result['tokens_used']}")
-        print(f"Cost: ${result['cost']:.6f}")
+        if len(sys.argv) != 2: 
+            print("Usage: python app_starter.py <question>\n") 
+            sys.exit(1) 
+        
+        query = sys.argv[1]
+        logger.info(f"\nQuerying agent...")
+        result = agent.query(query)
+
+        print(f"Answer\n---------------------\n: {result['answer']}\n")
+        logger.info(f"Tokens: {result['tokens_used']}")
+        logger.info(f"Cost: ${result['cost']:.6f}")
 
         # Check metrics
         metrics = agent.get_metrics()
-        print(f"\nMetrics: {metrics}")
+        logger.info(f"Metrics: {metrics}")
 
     except Exception as e:
-        print(f"Error: {e}")
-        logger.exception("Error during test")
+        logger.error(f"Error: {e}")
         sys.exit(1)
