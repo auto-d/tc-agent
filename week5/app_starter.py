@@ -379,14 +379,7 @@ class Agent:
         return input_cost + output_cost
 
     def get_metrics(self) -> Dict[str, Any]:
-        """Return performance metrics.
-
-        TODO: Return dict with:
-        - total_queries: number of queries processed
-        - total_tokens: cumulative tokens used
-        - total_cost: cumulative cost in dollars
-        - avg_cost_per_query: average cost per query
-        """
+        """Return performance metrics."""
 
         cost = self._estimate_query_cost(self.input_tokens, self.output_tokens)
         return {
