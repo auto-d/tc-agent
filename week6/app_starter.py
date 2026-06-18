@@ -17,6 +17,7 @@ from google.genai import types
 import logging
 import os
 import re
+from access_control_starter import AccessController, RateLimiter, CostEnforcer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -244,6 +245,10 @@ class Agent:
         self.output_tokens = 0
         self.queries = 0
 
+        self.access_controller = AccessController("data/access_control.json")
+        self.rate_limiter = RateLimiter(max_queries_per_minute=3)
+        self.cost_enforcer = CostEnforcer()
+
     def _build_system_prompt(self, user_role: str) -> str:
         """Build system prompt describing available tools.
 
@@ -258,11 +263,11 @@ class Agent:
         """
         return prompt
 
-    def query(self, user_query: str, user_role: str = "engineer") -> Dict[str, Any]:
+    def query(self, user_query: str, user_id: str, user_role: str = "engineer") -> Dict[str, Any]:
         """Answer a question using LLM + tools.
 
         Args:
-            user_query: The question to answer
+           1 user_query: The question to answer
             user_role: User's role (for access control in future weeks)
 
         Returns:
@@ -272,6 +277,16 @@ class Agent:
             - "cost": float - cost in dollars
             - "role": str - user role
         """
+        
+        if not self.rate_limiter.is_allowed(user_id): 
+            logger.warning(f"Rate limit exceeded for {user_id}")
+            return {"error": "Rate limit exceeded"}
+        
+        estimated_cost = 0.1
+        if not self.cost_enforcer.can_afford_query(user_id, estimated_cost=estimated_cost): 
+            logger.warning(f"Estimated cost of query ({estimated_cost}) would exceed budget for user {user_id}")
+            return {"error": "Cost limit exceeded"}
+        
         logger.info(f"Processing query: {user_query}")
 
         # Build up the Gemini config object which carries necessary tool call and prompt context
@@ -340,10 +355,15 @@ class Agent:
         except Exception as e: 
             logger.error(f"Unexpected error processing tool call! ({type(e)})")
 
+        cost = self._estimate_query_cost(input_tokens, output_tokens)
+        self.cost_enforcer.add_cost(user_id, user_role, cost)
+
+        answer = self.access_controller.redact_response(user_role, response.text)
+
         return {
-            "answer": response.text,
+            "answer": answer, 
             "tokens_used": input_tokens + output_tokens,
-            "cost": self._estimate_query_cost(input_tokens, output_tokens),
+            "cost": cost,
             "role": user_role,
         }
 
