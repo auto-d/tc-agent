@@ -102,7 +102,25 @@ class RateLimiter:
     def __init__(self, max_queries_per_minute: int = 30):
         """Initialize rate limiter."""
         self.max_queries_per_minute = max_queries_per_minute
-        self.user_query_times = {}  # {user_id: [timestamps...]}
+        self.thaw()
+
+    def thaw(self): 
+        """Retrieve times off disk"""
+        try: 
+            with open("user_query_times.json", "r") as file: 
+                self.user_query_times = json.load(file)
+
+        except FileNotFoundError as e: 
+            self.user_query_times = {}  # {user_id: [timestamps...]}
+
+    def freeze(self): 
+        """Write times to disk"""
+        try: 
+            with open("user_query_times.json", "w") as file: 
+                json.dump(self.user_query_times, file)
+                     
+        except FileNotFoundError as e: 
+            self.user_query_times = {}  # {user_id: [timestamps...]}
 
     def is_allowed(self, user_id: str) -> bool:
         """Check if user can make another query."""
@@ -110,6 +128,7 @@ class RateLimiter:
         
         if count <= self.max_queries_per_minute: 
             self.user_query_times[user_id].append(now)
+            self.freeze()
             return True 
         
         return False
@@ -121,6 +140,7 @@ class RateLimiter:
 
         if user_id not in self.user_query_times.keys(): 
             self.user_query_times[user_id] = [now]
+            self.freeze()
         
         for i in range(len(self.user_query_times[user_id])-1, -1, -1): 
             delta = now - self.user_query_times[user_id][i]
