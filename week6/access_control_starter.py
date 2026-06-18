@@ -50,10 +50,10 @@ class AccessController:
 
     def redact_response(self, role: str, response: str) -> str:
         """Redact sensitive fields from response."""
-        if role not in self.policy["sensitive_fields"]["ssn"]: 
-            response = re.sub(r"ddd-dd-dddd", "[REDACTED]", response) 
-        
-        return response
+
+        # This is not granular, policy indicates all SSNs are to be redacted so we 
+        # skip the role check and just hunt for the pattern to prevent leakage
+        return re.sub(r"\d\d\d-\d\d-\d\d\d\d", "[REDACTED]", response) 
 
     def log_access(self, role: str, resource: str, allowed: bool, field: str = None):
         """Log access attempt for audit trail."""

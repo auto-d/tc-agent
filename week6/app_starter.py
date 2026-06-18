@@ -95,11 +95,12 @@ class EmployeeLookupTool(Tool):
         
         try:
 
+            rows = []
             with sqlite3.connect(self.db_path) as conn: 
                 cursor = conn.cursor()
                 
                 if employee_name is not None: 
-                    cursor.execute(f"SELECT ${query_column_string} FROM employees WHERE name LIKE ?", (f"%{employee_name}%",))
+                    cursor.execute(f"SELECT {query_column_string} FROM employees WHERE name LIKE ?", (f"%{employee_name}%",))
                     rows = cursor.fetchall()
                 
                 elif employee_id is not None: 
@@ -167,10 +168,15 @@ class PolicySearchTool(Tool):
                 for match in matches[0:limit]: 
                     results.append({ 
                         "document_title": match["title"],
-                        "document_content": match["content"][0:500]
+                        "document_content": match["content"][0:500], 
+                        "sensitivity": match["sensitivity"],
+                        "id": match["id"],
+                        "category": match["category"]
                         })
 
-                return json.dumps(results)
+                filtered_results = self.access_controller.filter_documents(user_role, results)
+                        
+                return json.dumps(filtered_results)
                 
             return "No matches found"
         

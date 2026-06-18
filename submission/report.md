@@ -1,50 +1,25 @@
-# Agent Architecture with Tool Use Report
-
-## Design 
-
-The design doesn't deviate much from the template, with only two notable changes: 
-1. We used an inherited method to generate tool schemas to standardize the way which those schemas are presented and stringified. This reduces the likelihood of inconsistencies as tool employment grows and reduces the chances of runtime surprises. 
-2. Tool calling is built around the Gemini API expectations, in lieu of plain prompt stuffing. This trades some more structured overhead and redtape for smoother and more reliable tool calling.
+# Agent Access Control & Monitoring 
 
 ## Test cases
 
-### Travel Policy 
+### Record Visibility
+
+Here Jason the engineer can't see Wanda's home address, salary or SSN (as codified in the [policy](../week6/data/access_control.json)), but Simone the HR rep can. 
 
 ![alt text](image.png)
 
-### Layoffs 
+### Sensitive Information Redaction
+
+Here Simone does another lookup, now with global SSN redaction added. Though the field is reported in the query (she ostensibly has access as HR), the global redaction removes from the report. 
 
 ![alt text](image-1.png)
 
-### Expense Limits
+### Document Filtration and Access Logging
+
+Jason the engineer is unable to see sensitive internal documents on the GDPR posture, but John the executive can retrieve. Note whether access is granted or denied, a log statement is generated to that effect. 
 
 ![alt text](image-2.png)
 
-### Angela's Sales
+### Rate Limiting 
 
-![alt text](image-3.png)
-
-### The Brians
-
-![alt text](image-4.png)
-
-### Danielle's Benefits
-
-![alt text](image-5.png)
-
-### Employee ID lookupg 
-
-![alt text](image-6.png)
-
-### 🏐 Wilson!!!
-
-![alt text](image-7.png)
-
-### PTO 
-
-![alt text](image-8.png)
-
-### Confidential!!
-
-![alt text](image-9.png)
-
+### Cost Enforcement
