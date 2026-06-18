@@ -31,12 +31,13 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 class Tool:
     """Base class for tools the agent can call."""
 
-    def __init__(self, name: str, description: str):
+    def __init__(self, name: str, description: str, access_controller:AccessController):
         self.name = name
         self.description = description
         self.schema = None
+        self.access_controller = access_controller
 
-    def execute(self, **kwargs) -> str:
+    def execute(self, user_role, **kwargs) -> str:
         """Execute the tool.
         """
         raise NotImplementedError
@@ -51,8 +52,11 @@ class Tool:
 class EmployeeLookupTool(Tool):
     """Look up employee information from SQLite database."""
 
-    def __init__(self, db_path: str):
-        super().__init__("employee_lookup", "Find employee information by name or ID")
+    def __init__(self, db_path: str, access_controller:AccessController):
+        super().__init__(
+            name="employee_lookup", 
+            description="Find employee information by name or ID", 
+            access_controller=access_controller)
         self.db_path = db_path
         self.schema = {
             "name": self.name,
@@ -73,7 +77,7 @@ class EmployeeLookupTool(Tool):
             }
         }        
     
-    def execute(self, employee_name: str = None, employee_id: str = None) -> str:
+    def execute(self, user_role:str, employee_name: str = None, employee_id: str = None) -> str:
         """Look up employee by name or ID.
 
         Args:
@@ -83,17 +87,23 @@ class EmployeeLookupTool(Tool):
         Returns:
             JSON string with employee info or error message
         """
+        
+        # Apply role-based access control to visible fields
+        all_columns = ["id", "name", "email", "department_name", "title", "salary", "ssn", "address", "phone", "hire_date"]        
+        query_columns = [ col for col in all_columns if self.access_controller.can_view_field(user_role, col)]
+        query_column_string = ",".join(query_columns)
+        
         try:
 
             with sqlite3.connect(self.db_path) as conn: 
                 cursor = conn.cursor()
                 
                 if employee_name is not None: 
-                    cursor.execute("SELECT * FROM employees WHERE name LIKE ?", (f"%{employee_name}%",))
+                    cursor.execute(f"SELECT ${query_column_string} FROM employees WHERE name LIKE ?", (f"%{employee_name}%",))
                     rows = cursor.fetchall()
                 
                 elif employee_id is not None: 
-                    cursor.execute("SELECT * FROM employees WHERE id = ?", (int(employee_id),))
+                    cursor.execute(f"SELECT {query_column_string} FROM employees WHERE id = ?", (int(employee_id),))
                     rows = cursor.fetchall()
 
                 else: 
@@ -111,8 +121,11 @@ class EmployeeLookupTool(Tool):
 class PolicySearchTool(Tool):
     """Search policy documents by keyword."""
 
-    def __init__(self):
-        super().__init__("policy_search", "Search policy documents by keyword or topic")
+    def __init__(self, access_controller:AccessController):
+        super().__init__(
+            name="policy_search", 
+            description="Search policy documents by keyword or topic",
+            access_controller=access_controller)
         with open("data/documents.json") as f:
             self.documents = (json.load(f))
         
@@ -135,7 +148,7 @@ class PolicySearchTool(Tool):
             }
         }
 
-    def execute(self, query: str, limit: int = 5) -> str:
+    def execute(self, user_role:str, query: str, limit: int = 5) -> str:
         """Search policies by keyword.
 
         Args:
@@ -172,8 +185,11 @@ class PolicySearchTool(Tool):
 class ExpenseQueryTool(Tool):
     """Query expense policies and approval limits."""
 
-    def __init__(self):
-        super().__init__("expense_query", "Query expense approval limits by role")
+    def __init__(self, access_controller:AccessController):
+        super().__init__(
+            name="expense_query", 
+            description="Query expense approval limits by role", 
+            access_controller=access_controller)
         
         with open("data/policies.json") as f:
             self.policies = (json.load(f))
@@ -193,7 +209,7 @@ class ExpenseQueryTool(Tool):
             }
         }
 
-    def execute(self, role: str) -> str:
+    def execute(self, user_role: str) -> str:
         """Query expense approval limit for a given role.
 
         Args:
@@ -203,8 +219,8 @@ class ExpenseQueryTool(Tool):
             String with approval limit for the given role
         """
         try:
-            value = self.policies["expense"]["approval_limits"].get(role)
-            return f"Approval limit for {role}: ${str(value)}" if value is not None else f"No matching limit found for {role}"
+            value = self.policies["expense"]["approval_limits"].get(user_role)
+            return f"Approval limit for {user_role}: ${str(value)}" if value is not None else f"No matching limit found for {user_role}"
 
         except Exception as e:
             logger.error(f"Expense query error: {e}")
@@ -234,20 +250,19 @@ class Agent:
             )
 
         self.client = genai.Client(api_key=self.api_key)
+        self.access_controller = AccessController("data/access_control.json")
+        self.rate_limiter = RateLimiter(max_queries_per_minute=3)
+        self.cost_enforcer = CostEnforcer()
 
         self.tools = {
-            "employee_lookup": EmployeeLookupTool(db_path),
-            "policy_search": PolicySearchTool(),
-            "expense_query": ExpenseQueryTool(),
+            "employee_lookup": EmployeeLookupTool(db_path, self.access_controller),
+            "policy_search": PolicySearchTool(self.access_controller),
+            "expense_query": ExpenseQueryTool(self.access_controller),
         }
 
         self.input_tokens = 0
         self.output_tokens = 0
         self.queries = 0
-
-        self.access_controller = AccessController("data/access_control.json")
-        self.rate_limiter = RateLimiter(max_queries_per_minute=3)
-        self.cost_enforcer = CostEnforcer()
 
     def _build_system_prompt(self, user_role: str) -> str:
         """Build system prompt describing available tools.
@@ -329,7 +344,7 @@ class Agent:
                             logger.info(f"Mapped to internal tool {tool.name} ({tool.description})")
                             
                             logger.info(f"Calling with arguments: {call.args}")
-                            result = tool.execute(**call.args)
+                            result = tool.execute(user_role, **call.args)
                             
                             # Stick gemini's response into our aggregate response so it has context for the 
                             # following results
@@ -423,13 +438,16 @@ if __name__ == "__main__":
         logger.info(f"Agent initialized successfully")
 
         # Test a query
-        if len(sys.argv) != 2: 
-            print("Usage: python app_starter.py <question>\n") 
+        if len(sys.argv) != 4: 
+            print("Usage: python app_starter.py <user ID> <user role> <question>\n") 
             sys.exit(1) 
         
-        query = sys.argv[1]
-        logger.info(f"\nQuerying agent...")
-        result = agent.query(query)
+        user_id = sys.argv[1]
+        role = sys.argv[2]
+        query = sys.argv[3]
+        
+        logger.info(f"\nQuerying agent on behalf of user {user_id} ({role})...")
+        result = agent.query(user_id=user_id, user_role=role, user_query=query)
 
         print(f"Answer\n---------------------\n: {result['answer']}\n")
         logger.info(f"Tokens: {result['tokens_used']}")

@@ -41,12 +41,12 @@ class AccessController:
 
     def can_view_field(self, role: str, field_name: str) -> bool:
         """Check if role can view a sensitive field."""
-        try: 
-            return role in self.policy["sensitive_fields"][field_name]["visibility"]
         
-        except Exception as e: 
-            print(type(e), e)
-            raise NotImplementedError
+        # Fail open here to accommodate unknown fields 
+        if field_name in self.policy["sensitive_fields"].keys(): 
+            return role in self.policy["sensitive_fields"][field_name]["visibility"]
+        else: 
+            return True        
 
     def redact_response(self, role: str, response: str) -> str:
         """Redact sensitive fields from response."""
