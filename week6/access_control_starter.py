@@ -104,23 +104,35 @@ class RateLimiter:
         self.max_queries_per_minute = max_queries_per_minute
         self.thaw()
 
-    def thaw(self): 
-        """Retrieve times off disk"""
-        try: 
-            with open("user_query_times.json", "r") as file: 
-                self.user_query_times = json.load(file)
+    def thaw(self):
+        """Retrieve times from disk"""
+        try:
+            with open("user_query_times.json", "r") as file:
+                raw = json.load(file)
 
-        except FileNotFoundError as e: 
-            self.user_query_times = {}  # {user_id: [timestamps...]}
+            # NOTE: logic for ISO format deserialization courtesy of chatGPT5.5 on 18 June. Prompt: 
+            # "Can you rewrite these [freeze/thaw] to accept and then produce a list of timestamps?"
+            self.user_query_times = {
+                user_id: [datetime.fromisoformat(ts) for ts in timestamps]
+                for user_id, timestamps in raw.items()
+            }
 
-    def freeze(self): 
-        """Write times to disk"""
-        try: 
-            with open("user_query_times.json", "w") as file: 
-                json.dump(self.user_query_times, file)
-                     
-        except FileNotFoundError as e: 
-            self.user_query_times = {}  # {user_id: [timestamps...]}
+        except FileNotFoundError:
+            self.user_query_times = {}
+
+    def freeze(self):
+        """Write times to disk."""
+        
+        # NOTE: serializable construction courtesy of chatGPT5.5 on 18 June to avoid struggling 
+        # with time formats. Prompt: "Can you rewrite these [freeze/thaw] to accept and then 
+        # produce a list of timestamps?"
+        serializable = {
+            user_id: [ts.isoformat() for ts in timestamps]
+            for user_id, timestamps in self.user_query_times.items()
+        }
+
+        with open("user_query_times.json", "w") as file:
+            json.dump(serializable, file, indent=2)
 
     def is_allowed(self, user_id: str) -> bool:
         """Check if user can make another query."""

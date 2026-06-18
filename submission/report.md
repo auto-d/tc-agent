@@ -22,4 +22,12 @@ Jason the engineer is unable to see sensitive internal documents on the GDPR pos
 
 ### Rate Limiting 
 
+Here John is spamming our service. The rate limiting kicks in and errors out. 
+
+![alt text](image-3.png)
+
 ### Cost Enforcement
+
+No more headroom for Salim's toy projects. Note we are not writing cost accumulations to disk, so the prior costs are simulated by hardcoding Salim's prior spend. 
+
+![alt text](image-4.png)
