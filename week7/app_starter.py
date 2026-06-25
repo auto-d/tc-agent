@@ -127,7 +127,7 @@ class PolicySearchTool(Tool):
             name="policy_search", 
             description="Search policy documents by keyword or topic",
             access_controller=access_controller)
-        with open("data/documents.json") as f:
+        with open("../week6/data/documents.json") as f:
             self.documents = (json.load(f))
         
         self.schema = {
@@ -197,7 +197,7 @@ class ExpenseQueryTool(Tool):
             description="Query expense approval limits by role", 
             access_controller=access_controller)
         
-        with open("data/policies.json") as f:
+        with open("../week6/data/policies.json") as f:
             self.policies = (json.load(f))
 
         self.schema = {
@@ -256,7 +256,7 @@ class Agent:
             )
 
         self.client = genai.Client(api_key=self.api_key)
-        self.access_controller = AccessController("data/access_control.json")
+        self.access_controller = AccessController("../week6/data/access_control.json")
         self.rate_limiter = RateLimiter(max_queries_per_minute=3)
         self.cost_enforcer = CostEnforcer()
 
@@ -267,6 +267,7 @@ class Agent:
         }
 
         self.input_tokens = 0
+        self.tool_tokens = 0 
         self.output_tokens = 0
         self.queries = 0
 
@@ -302,10 +303,7 @@ class Agent:
         if not self.rate_limiter.is_allowed(user_id): 
             logger.warning(f"Rate limit exceeded for {user_id}")
             return {"error": "Rate limit exceeded"}
-        
-        # Simulate cost overrun
-        self.cost_enforcer.add_cost(user_id, user_role, 100.0)
-        
+                        
         estimated_cost = 0.1
         if not self.cost_enforcer.can_afford_query(user_id, estimated_cost=estimated_cost): 
             logger.warning(f"Estimated cost of query ({estimated_cost}) would exceed budget for user {user_id}")
@@ -402,6 +400,7 @@ class Agent:
             output += response.usage_metadata.candidates_token_count or 0
 
         self.input_tokens += input 
+        self.tool_tokens = response.usage_metadata.tool_use_prompt_token_count or 0 
         self.output_tokens += output 
         self.queries += 1
 
@@ -426,12 +425,18 @@ class Agent:
     def get_metrics(self) -> Dict[str, Any]:
         """Return performance metrics."""
 
-        cost = self._estimate_query_cost(self.input_tokens, self.output_tokens)
+        llm_cost = self._estimate_query_cost(self.input_tokens, self.output_tokens)
+        tool_cost = self._estimate_query_cost(0, self.tool_tokens)
+
         return {
             "total_queries": self.queries,
-            "total_tokens": self.input_tokens + self.output_tokens,
-            "total_cost": cost,
-            "avg_cost_per_query": cost/self.queries if self.queries > 0 else 0,
+            "total_llm_tokens": self.input_tokens + self.output_tokens, 
+            "total_tool_tokens": self.tool_tokens, 
+            "total_tokens": self.input_tokens + self.tool_tokens + self.output_tokens,
+            "total_llm_cost": llm_cost,
+            "total_tool_cost": tool_cost, 
+            "total_cost": llm_cost + tool_cost,
+            "avg_cost_per_query": (llm_cost + tool_cost)/self.queries if self.queries > 0 else 0,
         }
 
 
@@ -443,7 +448,7 @@ if __name__ == "__main__":
 
     try:
         # Initialize agent
-        agent = Agent("data/techcorp.db")
+        agent = Agent("../week6/data/techcorp.db")
         logger.info(f"Agent initialized successfully")
 
         # Test a query
