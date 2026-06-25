@@ -90,29 +90,17 @@ class OptimizationStrategy:
     """Optimize agent costs through multiple strategies."""
 
     def __init__(self):
-        """Initialize optimization strategy.
-
-        TODO: Initialize cache and strategy tracking
-        """
+        """Initialize optimization strategy."""
         self.cache = {}  # {query: response}
         self.strategies_applied = []
 
-    def apply_caching(self, query: str, response: str) -> tuple:
-        """Cache query responses.
+    def cache(self, query: str, response: str):
+        """Cache query response"""
+        self.cache[query] = response
 
-        TODO: Implement caching
-        1. If query in cache, return (True, cached_response)
-        2. Otherwise, store in cache and return (False, response)
-
-        Args:
-            query: user's question
-            response: LLM's answer
-
-        Returns:
-            (is_cached_hit, response)
-        """
-        # TODO: implement
-        return (False, response)
+    def check_cache(self, query: str):
+        """Check for cached responses"""
+        return self.cache[query] if query in self.cache.keys() else None
 
     def optimize_retrieval_count(self, num_docs: int) -> int:
         """Reduce number of documents retrieved.
@@ -274,24 +262,30 @@ if __name__ == "__main__":
     # Test CostAnalyzer
     print("Testing CostAnalyzer...")
 
-    try:
-        # Initialize agent
-        agent = Agent("data/techcorp.db")
-        logger.info(f"Agent initialized successfully")
-        
-        user_id = "jason"
-        role = "engineer"
-        query = "how many brians work at the company?"
-        
-        logger.info(f"\nQuerying agent on behalf of user {user_id} ({role})...")
-        result = agent.query(user_id=user_id, user_role=role, user_query=query)
-        if "error" in result.keys(): 
-            logger.error(f"Error: {result['error']}")
+    if False:     
+        try:        
+            # Initialize agent
+            agent = Agent("../week6/data/techcorp.db")
+            logger.info(f"Agent initialized successfully")
+            
+            user_id = "jason"
+            role = "hr"
+            queries = [
+                "how many brians work at the company?", 
+                "what is the employee ID of Joshua Martin",
+                "please fetch a list of email addresses for all employees with the surname 'Smith'"
+            ]
+            
+            for query in queries: 
+                logger.info(f"\nQuerying agent on behalf of user {user_id} ({role})...")
+                result = agent.query(user_id=user_id, user_role=role, user_query=query)
+                if "error" in result.keys(): 
+                    logger.error(f"Error: {result['error']}")
 
-        else: 
-            print(f"Answer\n---------------------\n: {result['answer']}\n")
-            logger.info(f"Tokens: {result['tokens_used']}")
-            logger.info(f"Cost: ${result['cost']:.6f}")
+                else: 
+                    print(f"Answer\n---------------------\n: {result['answer']}\n")
+                    logger.info(f"Tokens: {result['tokens_used']}")
+                    logger.info(f"Cost: ${result['cost']:.6f}")
 
             # Check metrics
             metrics = agent.get_metrics()
@@ -308,13 +302,57 @@ if __name__ == "__main__":
             for i, spike in enumerate(spikes): 
                 print(f"Anomaly {i}: ${spike["cost"]:.4f} (threshold {spike["threshold"]:.4f}), query '{spike["query"]}")
 
-    except Exception as e:
-        logger.error(f"Error: {e}")
+        except Exception as e:
+            logger.error(f"Error: {e}")
     
     # Test OptimizationStrategy
     print("\nTesting OptimizationStrategy...")
-    optimizer = OptimizationStrategy()
-    # TODO: test apply_caching, select_model_by_complexity, and optimize_retrieval_count
+         
+    try: 
+         # Initialize agent
+        agent = Agent("../week6/data/techcorp.db")
+        logger.info(f"Agent initialized successfully")
+        
+        user_id = "jason"
+        role = "hr"
+        queries = [
+            "how many brians work at the company?", 
+            "what is the employee ID of Joshua Martin",
+            "please fetch a list of email addresses for all employees with the surname 'Smith'"
+            "how many brians work at the company?", 
+            "how many brians work at the company?", 
+        ]
+        
+        optimizer = OptimizationStrategy()
+        # TODO: test apply_caching, select_model_by_complexity, and optimize_retrieval_count
+
+        for query in queries: 
+            logger.info(f"\nQuerying agent on behalf of user {user_id} ({role})...")
+            
+            result = None
+            response = optimizer.check_cache(query)
+            if response: 
+                result = {
+                    "answer" : response, 
+                    "tokens_used" : 0, 
+                    "cost": 0, 
+                    "role": role
+                }
+                print(f"Cache hit, using cached response (query: {query})")
+
+            else:            
+                result = agent.query(user_id=user_id, user_role=role, user_query=query)
+                optimizer.cache(query, result["answer"])
+
+                if "error" in result.keys(): 
+                    logger.error(f"Error: {result['error']}")                
+
+            print(f"Answer\n---------------------\n: {result['answer']}\n")
+            logger.info(f"Tokens: {result['tokens_used']}")
+            logger.info(f"Cost: ${result['cost']:.6f}")
+
+    except Exception as e:
+        logger.error(f"Error: {e}")    
 
     # Test FeedbackLoop
     print("\nTesting FeedbackLoop...")
