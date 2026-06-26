@@ -38,8 +38,7 @@ class Tool:
         self.access_controller = access_controller
 
     def execute(self, user_role, **kwargs) -> str:
-        """Execute the tool.
-        """
+        """Execute the tool."""
         raise NotImplementedError
     
     def get_tool_schema(self) -> str: 
@@ -299,11 +298,7 @@ class Agent:
             - "cost": float - cost in dollars
             - "role": str - user role
         """
-        
-        if not self.rate_limiter.is_allowed(user_id): 
-            logger.warning(f"Rate limit exceeded for {user_id}")
-            return {"error": "Rate limit exceeded"}
-                        
+                               
         estimated_cost = 0.1
         if not self.cost_enforcer.can_afford_query(user_id, estimated_cost=estimated_cost): 
             logger.warning(f"Estimated cost of query ({estimated_cost}) would exceed budget for user {user_id}")

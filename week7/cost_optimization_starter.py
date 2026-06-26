@@ -94,78 +94,44 @@ class OptimizationStrategy:
         self.cache = {}  # {query: response}
         self.strategies_applied = []
 
-    def cache(self, query: str, response: str):
+    def cache_query(self, query: str, response: str):
         """Cache query response"""
         self.cache[query] = response
 
     def check_cache(self, query: str):
         """Check for cached responses"""
-        return self.cache[query] if query in self.cache.keys() else None
+        if query in self.cache.keys(): 
+            self.strategies_applied.append({"strategy": "Cached query (count)", "savings": 1})
+            return self.cache[query]        
+        self.strategies_applied.append({"strategy": "Cached query (count)", "savings": 0})
 
     def optimize_retrieval_count(self, num_docs: int) -> int:
-        """Reduce number of documents retrieved.
-
-        TODO: Reduce count intelligently
-        - Input 15 docs → output 3 docs (top-k)
-        - Reduces token cost
-
-        Args:
-            num_docs: original document count
-
-        Returns:
-            optimized document count
-        """
-        # TODO: implement
+        """Reduce number of documents retrieved."""
+        self.strategies_applied.append({"strategy": "Document reference reduction (docs reduced)", "savings": num_docs - num_docs//5})
         return max(1, num_docs // 5)  # Simple: reduce by 5x
 
     def select_model_by_complexity(self, query: str) -> str:
-        """Choose cheaper model for simple queries.
+        """Choose cheaper model for simple queries."""
+        self.strategies_applied.append({"strategy":"Low model complexity used in lieu of high complexit (count of queries)", "savings": 1})
+        return "gemini-2.5-pro" if len(query) > 15 else "gemini-1.5-flash"
 
-        TODO: Analyze query complexity
-        - Simple queries ("What is X?") → gemini-1.5-flash (cheaper, faster)
-        - Complex queries ("Analyze...", "Compare...", "Design...") → gemini-2.5-pro
+    def compress_response(self, response: str) -> str:
+        """Compress long responses while keeping essential info."""
+        
+        sentences = response.split(sep=".") if response else []
+        savings = 0 if len(sentences) <= 5 else len(sentences) - 5
+        self.strategies_applied.append({"strategy":"Responses compressed (sentences reduced)", "savings": savings})
 
-        Args:
-            query: user's question
-
-        Returns:
-            model name to use
-        """
-        # TODO: implement
-        return "gemini-2.5-pro"
-
-    def enable_response_compression(self, response: str) -> str:
-        """Compress long responses while keeping essential info.
-
-        TODO: Reduce response length
-        1. Split into sentences
-        2. Keep only first N essential sentences
-        3. Return compressed response
-
-        Args:
-            response: original response
-
-        Returns:
-            compressed response
-        """
-        # TODO: implement
-        return response
+        return ".".join(sentences[0:5])
 
     def get_optimization_impact(self) -> Dict[str, Any]:
-        """Estimate cost savings from applied optimizations.
-
-        TODO: Return impact analysis:
-        - total_savings_pct: estimated % cost reduction
-        - strategies_applied: list of which strategies used
-        - breakdown: savings estimate per strategy
-        """
-        # TODO: implement
-        return {
-            "total_savings_pct": 0.0,
-            "strategies_applied": self.strategies_applied,
-            "breakdown": {},
-        }
-
+        """Estimate cost savings from applied optimizations."""
+        
+        breakdown = {}
+        for s in self.strategies_applied: 
+            breakdown[s["strategy"]] = (breakdown[s["strategy"]] + s["savings"]) if s["strategy"] in breakdown.keys() else 0
+        
+        return breakdown
 
 # ============================================================================
 # TASK 3: Implement FeedbackLoop
@@ -176,10 +142,7 @@ class FeedbackLoop:
     """Collect and validate user corrections for continuous improvement."""
 
     def __init__(self):
-        """Initialize feedback loop.
-
-        TODO: Initialize corrections list and validation rules
-        """
+        """Initialize feedback loop."""
         self.corrections = []
         # Authority hierarchy for role-based validation
         self.authority = {
@@ -197,72 +160,61 @@ class FeedbackLoop:
         corrected_answer: str,
         user_role: str,
     ) -> Dict[str, Any]:
-        """Submit a correction to the agent's answer.
+        """Submit a correction to the agent's answer."""
+        
+        if self.authority[user_role] >= 3: 
+            self.corrections.append({
+                "original_query": original_query, 
+                "original_answer": original_answer, 
+                "corrected_answer": corrected_answer, 
+                "user_role" : user_role
+            })
+            return {"accepted": True, "reason": "sufficient privilege"}
 
-        TODO: Validate and store correction
-        1. Check user_role has sufficient authority
-        2. Check corrected_answer is detailed enough (longer than original)
-        3. Store in corrections list
-        4. Return acceptance status
-
-        Args:
-            original_query: the question
-            original_answer: agent's incorrect answer
-            corrected_answer: user's correction
-            user_role: user's role (for authority check)
-
-        Returns:
-            {"accepted": True/False, "reason": "..."}
-        """
-        # TODO: implement
-        return {"accepted": False, "reason": "TODO: implement validation"}
+        return {"accepted": False, "reason": "**insufficient privilege**"}
 
     def validate_correction(self, index: int) -> bool:
-        """Validate a stored correction is accurate.
-
-        TODO: Check correction quality:
-        1. User role has sufficient authority (manager+, i.e. level 3 or above)
-        2. Correction is more detailed than original
-        3. Correction makes sense
-
-        Args:
-            index: index into corrections list
-
-        Returns:
-            True if correction is valid, False otherwise
-        """
-        # TODO: implement
+        """Validate a stored correction is accurate."""
+        if self.authority[self.corrections[index]['user_role']] >=3: 
+            
+            if len(self.corrections[index]["original_answer"]) < len(self.corrections[index]["corrected_answer"]): 
+                return True 
+        
         return False
 
     def get_feedback_metrics(self) -> Dict[str, Any]:
-        """Compute metrics on feedback quality.
+        """Compute metrics on feedback quality."""
+        valid = 0 
+        length = 0 
+        for i in range(0, len(self.corrections)): 
+            valid += 1 if self.validate_correction(i) else 0
+            length += len(self.corrections[i]['corrected_answer'])
 
-        TODO: Calculate:
-        - total_corrections: number of corrections received
-        - validation_rate: % of corrections that are valid
-        - avg_correction_length: average length of corrections
-        - top_error_patterns: most common mistakes corrected
-
-        Returns:
-            dict with feedback metrics
-        """
-        # TODO: implement
         return {
             "total_corrections": len(self.corrections),
-            "validation_rate": 0.0,
-            "avg_correction_length": 0.0,
-            "top_error_patterns": [],
+            "validation_rate": valid/len(self.corrections),
+            "avg_correction_length": length/len(self.corrections),
+            #"top_error_patterns": [], # We don't have any sort of taxonomy here to apply or judge patterns, this might be cruft from a previous assignment draft
         }
 
+def pretty_print(stats): 
+    """
+    Pretty-printer for dumping optimization data. 
+    NOTE: implementation courtesy of ChatGPT5.5. Prompt: 
+    Give me a pretty-printer funciton for dicts of this form: `{'Document reference reduction (docs reduced)': 0, 'Low model complexity used in lieu of high complexit (count of queries)': 0, 'Cached query (count)': 0, 'Responses compressed (sentences reduced)': 0}`
+    """    
+    width = max(len(k) for k in stats)
+    for key, value in stats.items():
+        print(f"{key:<{width}} : {value:>6,}")
 
 if __name__ == "__main__":
     # Basic structure is provided below. Add your own test cases to verify your implementation.
-    # Run with: python3 cost_optimization_starter.py
-
-    # Test CostAnalyzer
-    print("Testing CostAnalyzer...")
+    # Run with: python3 cost_optimization_starter.py    
 
     if False:     
+        # Test CostAnalyzer
+        print("Testing CostAnalyzer...")
+
         try:        
             # Initialize agent
             agent = Agent("../week6/data/techcorp.db")
@@ -294,8 +246,9 @@ if __name__ == "__main__":
             analyzer = CostAnalyzer()            
             analyzer.record_query(query, metrics)            
             breakdown = analyzer.get_cost_breakdown()
-            print("Cost breakdown")
-            print(breakdown)
+            
+            print("Cost Breakdown:")
+            pretty_print(breakdown)
 
             spikes = analyzer.identify_cost_spikes()
             print("Anomalies detected:", len(spikes))
@@ -305,56 +258,92 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Error: {e}")
     
-    # Test OptimizationStrategy
-    print("\nTesting OptimizationStrategy...")
-         
-    try: 
-         # Initialize agent
-        agent = Agent("../week6/data/techcorp.db")
-        logger.info(f"Agent initialized successfully")
-        
-        user_id = "jason"
-        role = "hr"
-        queries = [
-            "how many brians work at the company?", 
-            "what is the employee ID of Joshua Martin",
-            "please fetch a list of email addresses for all employees with the surname 'Smith'"
-            "how many brians work at the company?", 
-            "how many brians work at the company?", 
-        ]
-        
-        optimizer = OptimizationStrategy()
-        # TODO: test apply_caching, select_model_by_complexity, and optimize_retrieval_count
-
-        for query in queries: 
-            logger.info(f"\nQuerying agent on behalf of user {user_id} ({role})...")
+    if False:     
+        # Test OptimizationStrategy
+        print("\nTesting OptimizationStrategy...")
             
-            result = None
-            response = optimizer.check_cache(query)
-            if response: 
-                result = {
-                    "answer" : response, 
-                    "tokens_used" : 0, 
-                    "cost": 0, 
-                    "role": role
-                }
-                print(f"Cache hit, using cached response (query: {query})")
+        try: 
+            # Initialize agent
+            agent = Agent("../week6/data/techcorp.db")
+            logger.info(f"Agent initialized successfully")
+            
+            user_id = "jason"
+            role = "hr"
+            queries = [
+                "how many brians work at the company?", 
+                "what is the employee ID of Joshua Martin",
+                "please fetch a list of email addresses for all employees with the surname 'Smith'"
+                "how many brians work at the company?", 
+                "how many brians work at the company?", 
+            ]
+            
+            optimizer = OptimizationStrategy()
 
-            else:            
+            for query in queries: 
+                logger.info(f"\nQuerying agent on behalf of user {user_id} ({role})...")
+                
+                optimizer.optimize_retrieval_count(10)
+                optimizer.select_model_by_complexity(query)            
+
+                result = None
+                response = optimizer.check_cache(query)
+                if response: 
+                    result = {
+                        "answer" : response, 
+                        "tokens_used" : 0, 
+                        "cost": 0, 
+                        "role": role
+                    }
+                    print(f"Cache hit, using cached response (query: {query})")
+
+                else:            
+                    result = agent.query(user_id=user_id, user_role=role, user_query=query)
+                    optimizer.cache_query(query, result["answer"])
+
+                    if "error" in result.keys(): 
+                        logger.error(f"Error: {result['error']}")                
+
+                answer = optimizer.compress_response(result['answer'])
+
+            optimizations = optimizer.get_optimization_impact()
+            print("Optimization Summary:")
+            pretty_print(optimizations)
+
+        except Exception as e:
+            logger.error(f"Error: {e}")    
+
+    if True: 
+        # Test FeedbackLoop
+        print("\nTesting FeedbackLoop...")        
+                
+        try: 
+            # Initialize agent
+            agent = Agent("../week6/data/techcorp.db")
+            logger.info(f"Agent initialized successfully")
+            
+            user_id = "jason"
+            role = "manager"
+            queries = [
+                "what is the average number of sheckels we pay these fools?", 
+            ]
+            
+            feedback = FeedbackLoop()
+
+            for query in queries: 
+                logger.info(f"\nQuerying agent on behalf of user {user_id} ({role})...")
+
                 result = agent.query(user_id=user_id, user_role=role, user_query=query)
-                optimizer.cache(query, result["answer"])
-
                 if "error" in result.keys(): 
-                    logger.error(f"Error: {result['error']}")                
+                    logger.error(f"Error: {result['error']}")    
 
-            print(f"Answer\n---------------------\n: {result['answer']}\n")
-            logger.info(f"Tokens: {result['tokens_used']}")
-            logger.info(f"Cost: ${result['cost']:.6f}")
+            print("Answer:", result['answer'])
+            correction = input("Please enter a correction if necessary:") 
+            if correction: 
+                feedback_result = feedback.submit_correction(query, result['answer'], correction, role)
+                print(feedback_result)
 
-    except Exception as e:
-        logger.error(f"Error: {e}")    
+            print("Feedback Summary:")
+            pretty_print(feedback.get_feedback_metrics())
 
-    # Test FeedbackLoop
-    print("\nTesting FeedbackLoop...")
-    feedback = FeedbackLoop()
-    # TODO: submit corrections with different roles and verify accepted/rejected correctly
+        except Exception as e:
+            logger.error(f"Error: {e}")   
